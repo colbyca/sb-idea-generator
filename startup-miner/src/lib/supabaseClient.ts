@@ -9,7 +9,7 @@ export const createClientComponentClient = () => {
   )
 }
 
-// Server-side client (optional for Server Components)
+// Server-side client (for Server Components)
 export const createSupabaseServerClient = () => {
   return createServerComponentClient({ cookies })
 }
