@@ -1,7 +1,13 @@
 import { createSupabaseServerClient } from '@/lib/supabaseClient'
+import { redirect } from 'next/navigation'
 
 export default async function HomePage() {
   const supabase = createSupabaseServerClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) {
+    redirect('/login')
+  }
+  
   const { data: ideas } = await supabase
     .from('ideas')
     .select('*')
