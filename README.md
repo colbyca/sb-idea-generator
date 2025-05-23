@@ -1,0 +1,1 @@
+# sb-idea-generator
