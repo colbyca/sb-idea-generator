@@ -12,11 +12,6 @@ DEFAULT_BOT = "bot1"
 def main(url: str, key: str):
     # Setup supabase client
     client: Client = create_client(url, key)
-    client.table("ingestion_queue").insert(
-        {"source": "test", "external_id": "python", "body": "test"}
-    ).execute()
-
-    return
 
     # Create reddit instance for read only posts
     reddit = Reddit(DEFAULT_BOT)
