@@ -25,6 +25,10 @@ def store_in_ingestion_queue(client: Client, source: str, external_id: str, body
         .eq("external_id", external_id) \
         .execute()
     
+    if existing.data:
+        print(f"Entry already exists: {source} {external_id}")
+        return
+    
     # Only insert if no existing entry found
     if not existing.data:
         data = {
