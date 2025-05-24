@@ -1,20 +1,69 @@
 from praw import Reddit
+import praw
 import argparse
 import os
+import time
+from datetime import datetime
 from supabase import create_client, Client
+from typing import List, Dict, Any
+from dotenv import load_dotenv
 
 from praw.models import MoreComments, Submission
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure the bot to use here
 DEFAULT_BOT = "bot1"
 
+def store_in_ingestion_queue(client: Client, source: str, external_id: str, body: str, posted_at: datetime):
+    """Store a post or comment in the ingestion queue."""
+    data = {
+        "source": source,
+        "external_id": external_id,
+        "body": body,
+        "posted_at": posted_at.isoformat(),
+        "processed": False
+    }
+    client.table("ingestion_queue").insert(data).execute()
+
+def process_submission(submission: Submission, client: Client):
+    """Process a submission and its comments."""
+    # Store the submission
+    store_in_ingestion_queue(
+        client=client,
+        source=submission.url,
+        external_id=submission.id,
+        body=submission.selftext or submission.title,
+        posted_at=datetime.fromtimestamp(submission.created_utc)
+    )
+    
+    # Get and store comments
+    submission.comments.replace_more(limit=0)  # Remove MoreComments objects
+    comments = submission.comments.list()
+    
+    # Sort comments by creation time and take the 20 newest
+    sorted_comments = sorted(comments, key=lambda x: x.created_utc, reverse=True)[:20]
+    
+    for comment in sorted_comments:
+        store_in_ingestion_queue(
+            client=client,
+            source=submission.url,
+            external_id=comment.id,
+            body=comment.body,
+            posted_at=datetime.fromtimestamp(comment.created_utc)
+        )
 
 def main(url: str, key: str):
     # Setup supabase client
     client: Client = create_client(url, key)
 
     # Create reddit instance for read only posts
-    reddit = Reddit(DEFAULT_BOT)
+    reddit = Reddit(
+        client_id=os.getenv("REDDIT_CLIENT_ID"),
+        client_secret=os.getenv("REDDIT_CLIENT_SECRET"),
+        user_agent=os.getenv("REDDIT_USER_AGENT")
+    )
 
     # Setup CLI arguments
     arg_parser = argparse.ArgumentParser(
@@ -26,53 +75,55 @@ def main(url: str, key: str):
         "subreddits", nargs="+", help="List of subreddits to scrape"
     )
 
-    # Optional Arguments
-    arg_parser.add_argument(
-        "--submission_filter",
-        choices=["hot", "gilded", "new", "rising", "top", "controversial"],
-        help="Filter to use on submission types (default: hot)",
-        default="hot",
-    )
-
     # Parse arguments
     args = arg_parser.parse_args()
-    # Grabs the list of subreddits to check
     subreddits: list[str] = args.subreddits
-    # Get the submission fitler
-    submission_filter: str = args.submission_filter
 
-    # Prints the top 10
-    for subreddit in subreddits:
-        submissions = _get_submissions(reddit, subreddit, submission_filter)
+    print(f"Starting to monitor subreddits: {', '.join(subreddits)}")
+    print("Press Ctrl+C to stop the script")
 
-
-def _get_submissions(reddit: Reddit, subreddit: str, submission_filter: str):
-    """Grabs a list of submissions given a subreddit."""
-    # Grab the sumbission given the filter type
-    submissions = []
-    match submission_filter:
-        case "hot":
-            submissions = reddit.subreddit(subreddit).hot(limit=10)
-        case "gilded":
-            submissions = reddit.subreddit(subreddit).gilded(limit=10)
-        case "new":
-            submissions = reddit.subreddit(subreddit).new(limit=10)
-        case "rising":
-            submissions = reddit.subreddit(subreddit).rising(limit=10)
-        case "top":
-            submissions = reddit.subreddit(subreddit).top(limit=10)
-        case "controversial":
-            submissions = reddit.subreddit(subreddit).controversial(limit=10)
-    # Returns the list of submissions for a given subreddit
-    return submissions
-
+    try:
+        while True:
+            for subreddit in subreddits:
+                print(f"\nProcessing subreddit: r/{subreddit}")
+                submissions = reddit.subreddit(subreddit).new(limit=20)
+                
+                for submission in submissions:
+                    try:
+                        process_submission(submission, client)
+                    except Exception as e:
+                        print(f"Error processing submission {submission.id}: {str(e)}")
+            
+            print("\nWaiting 5 minutes before next check...")
+            time.sleep(1500)  # Sleep for 5 minutes
+            
+    except KeyboardInterrupt:
+        print("\nStopping the script...")
 
 if __name__ == "__main__":
-    url: str | None = os.environ.get("SUPABASE_URL")
-    key: str | None = os.environ.get("SUPABASE_KEY")
+    # Load environment variables
+    url: str | None = os.getenv("SUPABASE_URL")
+    key: str | None = os.getenv("SUPABASE_KEY")
+    reddit_client_id: str | None = os.getenv("REDDIT_CLIENT_ID")
+    reddit_client_secret: str | None = os.getenv("REDDIT_CLIENT_SECRET")
+    reddit_user_agent: str | None = os.getenv("REDDIT_USER_AGENT")
 
-    # Check that the url and key are set
-    if url and key:
-        main(url, key)
-    else:
-        print("Please set your SUPABASE URL and SUPABASE KEY as env variables")
+    # Check that all required environment variables are set
+    required_vars = {
+        "SUPABASE_URL": url,
+        "SUPABASE_KEY": key,
+        "REDDIT_CLIENT_ID": reddit_client_id,
+        "REDDIT_CLIENT_SECRET": reddit_client_secret,
+        "REDDIT_USER_AGENT": reddit_user_agent
+    }
+
+    missing_vars = [var for var, value in required_vars.items() if not value]
+    
+    if missing_vars:
+        print("Missing required environment variables:")
+        for var in missing_vars:
+            print(f"- {var}")
+        print("\nPlease ensure these variables are set in your .env file")
+        exit(1)
+
+    main(url, key)

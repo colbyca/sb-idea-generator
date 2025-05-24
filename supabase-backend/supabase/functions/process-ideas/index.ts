@@ -27,7 +27,7 @@ Deno.serve(async _req => {
     .from('ingestion_queue')
     .select('*')
     .eq('processed', false)
-    .limit(20)
+    .limit(100)
 
 
   if (error) {
@@ -47,13 +47,29 @@ Deno.serve(async _req => {
     }
     try {
       // 2. Quick heuristic or cheap model to discard non-complaints
-      const maybeComplaint = /i wish|why isn'?t there|someone needs/i.test(row.body.toLowerCase());
+      const maybeComplaint = /i wish|why isn'?t there|someone needs|i hate|this sucks|annoying|frustrated|can'?t find|should be|need a|want a|looking for|hard to|difficult to|wish there was|if only|would be great if|why can'?t|why do|why does/i.test(row.body.toLowerCase());
       if (!maybeComplaint) {
         console.log('Not a complaint: ', row.body, row.id)
         await supabase.from('ingestion_queue').update({ processed: true }).eq('id', row.id);
         continue;
       }
       console.log('Found complaint: ', row.body, row.id)
+
+      // Check if the complaint could be solved with software
+      const softwareCheck = await openai.chat.completions.create({
+        model: 'gpt-4.1-nano',
+        messages: [
+          { role: 'system', content: 'You are a technical advisor. Respond with only YES or NO.' },
+          { role: 'user', content: `Could this complaint be solved with software? Complaint: ${row.body}` }
+        ]
+      })
+
+      const isSoftwareSolvable = softwareCheck.choices[0].message.content?.trim().toUpperCase().includes('YES')
+      if (!isSoftwareSolvable) {
+        console.log('Not software-solvable: ', row.body, row.id)
+        await supabase.from('ingestion_queue').update({ processed: true }).eq('id', row.id);
+        continue;
+      }
 
       // 3. Ask GPT-4.1 to craft the idea
       const completion = await openai.chat.completions.create({

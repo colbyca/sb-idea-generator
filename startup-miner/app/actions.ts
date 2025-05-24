@@ -53,7 +53,7 @@ export const signInAction = async (formData: FormData) => {
     return encodedRedirect("error", "/sign-in", error.message);
   }
 
-  return redirect("/protected");
+  return redirect("/");
 };
 
 export const forgotPasswordAction = async (formData: FormData) => {
@@ -138,10 +138,7 @@ export async function fetchIdeas(page: number = 1, pageSize: number = 10) {
 
   const { data, error } = await supabase
     .from('ideas')
-    .select(`
-      *,
-      votes:user_votes(vote_type)
-    `)
+    .select('*')
     .order('created_at', { ascending: false })
     .range((page - 1) * pageSize, page * pageSize - 1);
 
@@ -150,13 +147,7 @@ export async function fetchIdeas(page: number = 1, pageSize: number = 10) {
     throw error;
   }
 
-  // Calculate rating from votes
-  const ideasWithRating = data.map(idea => ({
-    ...idea,
-    rating: idea.votes?.reduce((sum: number, vote: { vote_type: number }) => sum + vote.vote_type, 0) || 0
-  }));
-
-  return ideasWithRating;
+  return data;
 }
 
 export async function updateIdeaRating(id: string, increment: number) {

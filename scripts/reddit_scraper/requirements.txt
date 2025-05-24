@@ -1,2 +1,3 @@
 praw
 supabase
+python-dotenv

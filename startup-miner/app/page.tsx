@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { IdeaCard } from "@/components/idea-card";
-import { fetchIdeas, updateIdeaRating } from "./actions";
+import { fetchIdeas } from "./actions";
 
 interface Idea {
   id: string;
@@ -10,7 +10,6 @@ interface Idea {
   thesis: string;
   tech_stack: string;
   monetization: string;
-  rating: number;
   created_at: string;
 }
 
@@ -30,17 +29,20 @@ export default function Home() {
       const newIdeas = await fetchIdeas(page);
       if (newIdeas && newIdeas.length > 0) {
         // Filter out any ideas that already exist in our state
-        const uniqueNewIdeas = newIdeas.filter(
-          newIdea => !ideas.some(existingIdea => existingIdea.id === newIdea.id)
-        );
+        setIdeas(prevIdeas => {
+          const uniqueNewIdeas = newIdeas.filter(
+            newIdea => !prevIdeas.some(existingIdea => existingIdea.id === newIdea.id)
+          );
 
-        if (uniqueNewIdeas.length > 0) {
-          setIdeas(prev => [...prev, ...uniqueNewIdeas]);
-          setPage(prev => prev + 1);
-        } else {
-          // If all ideas were duplicates, we've probably reached the end
-          setHasMore(false);
-        }
+          if (uniqueNewIdeas.length > 0) {
+            setPage(prev => prev + 1);
+            return [...prevIdeas, ...uniqueNewIdeas];
+          } else {
+            // If all ideas were duplicates, we've probably reached the end
+            setHasMore(false);
+            return prevIdeas;
+          }
+        });
       } else {
         setHasMore(false);
       }
@@ -48,7 +50,7 @@ export default function Home() {
       console.error('Error loading ideas:', error);
     }
     setLoading(false);
-  }, [page, loading, hasMore, ideas]);
+  }, [page, loading, hasMore]);
 
   // Initial load
   useEffect(() => {
@@ -80,24 +82,9 @@ export default function Home() {
     };
   }, [loading, loadMoreIdeas, hasMore]);
 
-  const handleVote = async (id: string, increment: number) => {
-    try {
-      const { rating } = await updateIdeaRating(id, increment);
-      setIdeas(prev =>
-        prev.map(idea =>
-          idea.id === id
-            ? { ...idea, rating }
-            : idea
-        )
-      );
-    } catch (error) {
-      console.error('Error updating vote:', error);
-    }
-  };
-
   return (
     <main className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold mb-8 text-center">Startup Ideas</h1>
+      <h1 className="text-3xl font-bold mb-8 text-center">Startup Miner</h1>
       <div className="space-y-6">
         {ideas.map((idea) => (
           <IdeaCard
@@ -107,8 +94,6 @@ export default function Home() {
             thesis={idea.thesis}
             techStack={idea.tech_stack}
             monetization={idea.monetization}
-            rating={idea.rating}
-            onVote={handleVote}
           />
         ))}
       </div>
