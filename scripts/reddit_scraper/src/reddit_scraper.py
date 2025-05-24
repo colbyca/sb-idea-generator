@@ -17,15 +17,24 @@ load_dotenv()
 DEFAULT_BOT = "bot1"
 
 def store_in_ingestion_queue(client: Client, source: str, external_id: str, body: str, posted_at: datetime):
-    """Store a post or comment in the ingestion queue."""
-    data = {
-        "source": source,
-        "external_id": external_id,
-        "body": body,
-        "posted_at": posted_at.isoformat(),
-        "processed": False
-    }
-    client.table("ingestion_queue").insert(data).execute()
+    """Store a post or comment in the ingestion queue if it doesn't already exist."""
+    # Check if entry already exists
+    existing = client.table("ingestion_queue") \
+        .select("id") \
+        .eq("source", source) \
+        .eq("external_id", external_id) \
+        .execute()
+    
+    # Only insert if no existing entry found
+    if not existing.data:
+        data = {
+            "source": source,
+            "external_id": external_id,
+            "body": body,
+            "posted_at": posted_at.isoformat(),
+            "processed": False
+        }
+        client.table("ingestion_queue").insert(data).execute()
 
 def process_submission(submission: Submission, client: Client):
     """Process a submission and its comments."""
@@ -86,7 +95,7 @@ def main(url: str, key: str):
         while True:
             for subreddit in subreddits:
                 print(f"\nProcessing subreddit: r/{subreddit}")
-                submissions = reddit.subreddit(subreddit).new(limit=20)
+                submissions = reddit.subreddit(subreddit).new(limit=10)
                 
                 for submission in submissions:
                     try:
